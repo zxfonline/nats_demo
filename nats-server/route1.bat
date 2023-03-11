@@ -1,0 +1,1 @@
+.\nats-server.exe -c .\\nats-route1.conf

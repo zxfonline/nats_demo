@@ -1,0 +1,3 @@
+nats-server/nats-server.exe
+natscli/nats.exe
+nats-server/runtime/*
