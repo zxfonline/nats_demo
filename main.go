@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -14,26 +16,85 @@ func init() {
 }
 
 var (
-	URL  = "nats://localhost:4222,nats://localhost:5222,nats://localhost:6222"
+	// nats://...
+	// ws://...
+	// tls://...
+	servers = []string{
+		"nats://127.0.0.1:4222",
+		"nats://127.0.0.1:5222",
+		"nats://127.0.0.1:6222",
+	}
 	User = "root1"
 	//cmd:nats server passwd
 	Pass = "1234567890098765432112"
 )
 
-func createJs() (js nats.JetStreamContext, deferFunc func()) {
-	// Connect to NATS
-	nc, err := nats.Connect(URL, nats.UserInfo(User, Pass))
+//https://natsbyexample.com/examples/jetstream/
+func main() {
+	//cmd :`nats stream rm EVENTS`
+	limits_stream()
+
+	//cmd :`nats stream rm EVENTS`
+	interest_stream()
+
+	//cmd :`nats stream rm EVENTS`
+	workqueue_stream()
+
+	QueuePubSub()
+
+	PubSub()
+}
+
+// Connect to NATS
+func createNc() (nc *nats.Conn, deferFunc func()) {
+	var err error
+	nc, err = nats.Connect(strings.Join(servers, ","),
+		nats.UserInfo(User, Pass),
+		// nats.MaxReconnects(60),
+		// nats.NoReconnect(),
+		// nats.DontRandomize(),
+		// nats.ReconnectWait(10*time.Second),
+		// nats.ReconnectBufSize(8*1024*1024),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			log.Printf("client disconnected: %v\n", err)
+		}),
+		nats.ReconnectHandler(func(_ *nats.Conn) {
+			log.Println("client reconnected")
+		}),
+		nats.ClosedHandler(func(_ *nats.Conn) {
+			log.Println("client closed")
+		}),
+		nats.DiscoveredServersHandler(func(nc *nats.Conn) {
+			log.Printf("Known servers: %v\n", nc.Servers())
+			log.Printf("Discovered servers: %v\n", nc.DiscoveredServers())
+		}),
+		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) {
+			log.Printf("Error: %v\n", err)
+		}))
 	if err != nil {
 		log.Fatal(err)
+		return
 	}
+	log.Printf("The connection is %v\n", nc.Status().String())
+	deferFunc = func() {
+		nc.Drain()
+		log.Printf("The connection is %v\n", nc.Status().String())
+	}
+	return
+}
 
-	// Create JetStream Context
+// Create JetStream Context
+func createJs() (js nats.JetStreamContext, deferFunc func()) {
+	var nc *nats.Conn
+	nc, deferFunc = createNc()
+	var err error
 	js, err = nc.JetStream()
 	if err != nil {
 		log.Fatal(err)
 	}
-	return js, func() { nc.Drain() }
+	return
 }
+
 func printStreamState(js nats.JetStreamContext, name string) {
 	info, err := js.StreamInfo(name)
 	if err != nil {
@@ -45,12 +106,10 @@ func printStreamState(js nats.JetStreamContext, name string) {
 	log.Println(string(b))
 }
 
-func main1() {
-	nc, err := nats.Connect(URL, nats.UserInfo(User, Pass))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer nc.Close()
+func QueuePubSub() {
+	log.Println("limits_stream\n")
+	nc, cancel := createNc()
+	defer cancel()
 
 	nc.QueueSubscribe("foo", "queue.foo", func(msg *nats.Msg) {
 		log.Println("Subscribe 1:", string(msg.Data))
@@ -75,70 +134,81 @@ func main1() {
 	time.Sleep(2 * time.Second)
 }
 
-func main2() {
-	nc, err := nats.Connect(URL, nats.UserInfo(User, Pass))
-	if err != nil {
-		log.Fatal(err)
-	}
+func PubSub() {
+	log.Println("limits_stream\n")
+	nc, cancel := createNc()
+	defer cancel()
 
-	// Create JetStream Context
-	js, err := nc.JetStream()
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Create a Stream
-	_, err = js.AddStream(&nats.StreamConfig{
-		Name:     "ORDERS",
-		Subjects: []string{"ORDERS.*"},
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+	g := sync.WaitGroup{}
+	g.Add(3)
+	go func() {
+		defer g.Done()
+		// Use a WaitGroup to wait for 2 messages to arrive
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 
-	// Update a Stream
-	_, err = js.UpdateStream(&nats.StreamConfig{
-		Name:     "ORDERS",
-		MaxBytes: 8,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+		// Subscribe
+		if _, err := nc.Subscribe("time.*.east", func(m *nats.Msg) {
+			log.Printf("%s: %s\n", m.Subject, m.Data)
+			wg.Done()
+		}); err != nil {
+			log.Fatal(err)
+		}
 
-	// Create a Consumer
-	_, err = js.AddConsumer("ORDERS", &nats.ConsumerConfig{
-		Durable: "MONITOR",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
+		// Wait for the 2 messages to come in
+		wg.Wait()
+	}()
 
-	// Delete Consumer
-	err = js.DeleteConsumer("ORDERS", "MONITOR")
+	go func() {
+		defer g.Done()
+		// Use a WaitGroup to wait for 4 messages to arrive
+		wg := sync.WaitGroup{}
+		wg.Add(4)
 
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Delete Stream
-	err = js.DeleteStream("ORDERS")
-	if err != nil {
-		log.Fatal(err)
-	}
-}
+		// Subscribe
+		if _, err := nc.Subscribe("time.>", func(m *nats.Msg) {
+			log.Printf("%s: %s\n", m.Subject, m.Data)
+			wg.Done()
+		}); err != nil {
+			log.Fatal(err)
+		}
 
-//https://natsbyexample.com/examples/jetstream/
-func main() {
-	////cmd :`nats stream rm EVENTS`
-	// limits_stream()
+		// Wait for the 4 messages to come in
+		wg.Wait()
 
-	////cmd :`nats stream rm EVENTS`
-	interest_stream()
+		// Close the connection
+		nc.Close()
+	}()
 
-	////cmd :`nats stream rm EVENTS`
-	// workqueue_stream()
+	go func() {
+		defer g.Done()
+		zoneID, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			log.Fatal(err)
+		}
+		now := time.Now()
+		zoneDateTime := now.In(zoneID)
+		formatted := zoneDateTime.String()
+
+		nc.Publish("time.us.east", []byte(formatted))
+		nc.Publish("time.us.east.atlanta", []byte(formatted))
+
+		zoneID, err = time.LoadLocation("Europe/Warsaw")
+		if err != nil {
+			log.Fatal(err)
+		}
+		zoneDateTime = now.In(zoneID)
+		formatted = zoneDateTime.String()
+
+		nc.Publish("time.eu.east", []byte(formatted))
+		nc.Publish("time.eu.east.warsaw", []byte(formatted))
+	}()
+	g.Wait()
 }
 
 //Retention: nats.InterestPolicy https://natsbyexample.com/examples/jetstream/interest-stream/go
 func interest_stream() {
+	log.Println("limits_stream\n")
 	js, cancel := createJs()
 	defer cancel()
 	cfg := &nats.StreamConfig{
@@ -148,6 +218,7 @@ func interest_stream() {
 	}
 
 	js.AddStream(cfg)
+	defer js.DeleteStream(cfg.Name)
 	log.Println("created the stream")
 
 	js.Publish("events.page_loaded", nil)
@@ -228,6 +299,7 @@ func interest_stream() {
 
 //Retention: nats.WorkQueuePolicy https://natsbyexample.com/examples/jetstream/workqueue-stream/go
 func workqueue_stream() {
+	log.Println("limits_stream\n")
 	js, cancel := createJs()
 	defer cancel()
 	cfg := &nats.StreamConfig{
@@ -237,6 +309,7 @@ func workqueue_stream() {
 	}
 
 	js.AddStream(cfg)
+	defer js.DeleteStream(cfg.Name)
 	log.Println("created the stream")
 
 	// js.Publish("events.us.page_loaded", nil)
@@ -300,6 +373,7 @@ func workqueue_stream() {
 
 //Retention: nats.LimitsPolicy https://natsbyexample.com/examples/jetstream/limits-stream/go
 func limits_stream() {
+	log.Println("limits_stream\n")
 	js, cancel := createJs()
 	defer cancel()
 
@@ -312,6 +386,7 @@ func limits_stream() {
 	cfg.Storage = nats.FileStorage
 
 	js.AddStream(&cfg)
+	defer js.DeleteStream(cfg.Name)
 	log.Println("created the stream")
 
 	js.Publish("events.page_loaded", nil)
