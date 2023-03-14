@@ -1,9 +1,9 @@
 {
   "description": "localhost",
-  "url": "nats://localhost:4222",
+  "url": "nats://localhost:4222,nats://localhost:4223,nats://localhost:4224",
   "token": "",
-  "user": "admin",
-  "password": "admin",
+  "user": "app",
+  "password": "app",
   "creds": "",
   "nkey": "",
   "cert": "",

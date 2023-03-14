@@ -15,7 +15,9 @@ step2:
 
     run nats-server/route3.bat (.\nats-server.exe -c .\\nats-route3.conf)
 
-    nats context add localhost --server "nats://admin:admin@localhost:4222" --description "local demo" --select
+    nats context add local --server "nats://localhost:4222,nats://localhost:4223,nats://localhost:4224" --description "local demo" --user app --password app
+
+    nats context select local
 
     nats server report jetstream
 
@@ -50,3 +52,6 @@ example:
     https://natsbyexample.com/examples/jetstream/
 
     https://www.bookstack.cn/read/NATS-2.8-en/welcome.md
+
+
+https://natsbyexample.com/examples/jetstream/partitions/cli
