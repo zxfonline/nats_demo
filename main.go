@@ -21,37 +21,35 @@ var (
 	// ws://...
 	// tls://...
 	servers = []string{
-		"nats://127.0.0.1:4222",
-		"nats://127.0.0.1:5222",
-		"nats://127.0.0.1:6222",
+		"nats://127.0.0.1:4222,nats://127.0.0.1:4322",
 	}
-	User = "root1"
+	User = "app"
 	//cmd:nats server passwd
-	Pass = "1234567890098765432112"
+	Pass = "app"
 )
 
 //https://natsbyexample.com/examples/jetstream/
 func main() {
 	//cmd :`nats stream rm EVENTS`
-	// limits_stream()
+	limits_stream()
 
 	//cmd :`nats stream rm EVENTS`
-	// interest_stream()
+	interest_stream()
 
 	//cmd :`nats stream rm EVENTS`
-	// workqueue_stream()
-	// pull_consumer()
-	// pull_consumer_limits()
-	// push_consumer()
-	// queue_push_consumer()
+	workqueue_stream()
+	pull_consumer()
+	pull_consumer_limits()
+	push_consumer()
+	queue_push_consumer()
 	multi_stream_consumption()
 
-	// QueuePubSub()
+	QueuePubSub()
 
-	// PubSub()
-	// DrainDemo()
+	PubSub()
+	DrainDemo()
 
-	// EncodeDemo()
+	EncodeDemo()
 }
 
 // Connect to NATS

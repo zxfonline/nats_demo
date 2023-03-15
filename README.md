@@ -9,27 +9,46 @@ step1:
 
 step2:
 
-    run nats-server/route1.bat (.\nats-server.exe -c .\\nats-route1.conf)
+    start cluster1.bat
+    start cluster2.bat
+   
+    nats context add cluster1 --server nats://localhost:4222,nats://localhost:4223,nats://localhost:4224 --user app --password app  --description "cluster1"
 
-    run nats-server/route2.bat (.\nats-server.exe -c .\\nats-route2.conf)
+    nats context add cluster2 --server nats://localhost:4322,nats://localhost:4323,nats://localhost:4324 --user app --password app  --description "cluster2"
 
-    run nats-server/route3.bat (.\nats-server.exe -c .\\nats-route3.conf)
+    nats context add super_cluster --server nats://localhost:4222,nats://localhost:4322 --user admin --password admin  --description "super cluster" --select
 
-    nats context add local --server nats://localhost:4222,nats://localhost:4223,nats://localhost:4224 --user app --password app  --description "local" --select
-
-    nats context select local
+    nats context select cluster1
+    nats context select cluster2
+    nats context select super_cluster
 
     nats server report jetstream
 
     http://127.0.0.1:8222/
 
+    http://127.0.0.1:8322/
 
-    cmd1:
+
+    check diff:
+
         nats reply foo "service instance A Reply# {{Count}}"
-    cmd2:
         nats reply foo "service instance B Reply# {{Count}}"
-    cmd3:
         nats request foo --count 10 "Request {{Count}}"
+
+    check diff:
+
+        nats -s "nats://app:app@localhost:4222" sub "foo"
+        nats -s "nats://app:app@localhost:4223" sub "foo"
+        nats -s "nats://app:app@localhost:4322" sub "foo"
+        nats -s "nats://app:app@localhost:4323" sub "foo"
+
+        nats -s "nats://app:app@localhost:4222" pub foo bar --count 10
+        nats -s "nats://app:app@localhost:4223" pub foo bar --count 10
+
+        nats -s "nats://app:app@localhost:4322" pub foo bar --count 10
+        nats -s "nats://app:app@localhost:4323" pub foo bar --count 10
+
+
 
 natsboard:
 
@@ -56,4 +75,4 @@ example:
     https://github.com/nats-io/natscli
 
 
-https://natsbyexample.com/examples/jetstream/partitions/cli
+    https://natsbyexample.com/examples/jetstream/partitions/cli

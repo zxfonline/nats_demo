@@ -1,1 +1,0 @@
-.\nats-server.exe -c .\\nats-gateway1.conf

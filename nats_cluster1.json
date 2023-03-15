@@ -1,0 +1,18 @@
+{
+  "description": "cluster1",
+  "url": "nats://localhost:4222,nats://localhost:4223,nats://localhost:4224",
+  "token": "app",
+  "user": "app",
+  "password": "app",
+  "creds": "",
+  "nkey": "",
+  "cert": "",
+  "key": "",
+  "ca": "",
+  "nsc": "",
+  "jetstream_domain": "",
+  "jetstream_api_prefix": "",
+  "jetstream_event_prefix": "",
+  "inbox_prefix": "",
+  "user_jwt": ""
+}
