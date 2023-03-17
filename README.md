@@ -1,10 +1,13 @@
 step1:
 
-    install nats-server & natscli
+    install nats-server & tool
     
-    go install github.com/nats-io/nats-server@latest
 
+    export GO111MODULE=on
+    go install github.com/nats-io/nats-server/v2@latest
     go install github.com/nats-io/natscli/nats@latest
+    go install github.com/nats-io/nkeys/nk@latest
+    go install github.com/nats-io/nsc/v2@latest
 
 
 step2:
@@ -34,6 +37,7 @@ step2:
         nats reply foo "service instance A Reply# {{Count}}"
         nats reply foo "service instance B Reply# {{Count}}"
         nats request foo --count 10 "Request {{Count}}"
+        nats request foo --count 10 "Request {{Count}}"
 
     check diff:
 
@@ -48,7 +52,29 @@ step2:
         nats -s "nats://app:app@localhost:4322" pub foo bar --count 10
         nats -s "nats://app:app@localhost:4323" pub foo bar --count 10
 
+    left local to remote:
 
+        .\nats-server.exe -c .\leaf_remote.conf
+
+        nats reply -s nats://localhost:4411 q 42
+        nats reply -s nats://app:app@localhost:4411 q 42
+
+
+        .\nats-server.exe -c .\leaf_local.conf
+
+        nats req -s nats://127.0.0.1:4422 q "req remote leftnode"
+        nats req -s nats://app:app@127.0.0.1:4422 q "req remote leftnode"
+
+
+        https://docs.nats.io/running-a-nats-service/configuration/leafnodes/jetstream_leafnodes
+    
+    nats -s "nats://app:app@localhost:4222" sub "events.0.*"
+    nats -s "nats://app:app@localhost:4222" sub "events.1.*"
+    nats -s "nats://app:app@localhost:4222" sub "events.2.*"
+
+    nats -s "nats://app:app@localhost:4322" pub events.a "Request {{Count}}" --count 10
+    nats -s "nats://app:app@localhost:4322" pub events.e "Request {{Count}}" --count 10
+    nats -s "nats://app:app@localhost:4322" pub events.g "Request {{Count}}" --count 10
 
 natsboard:
 

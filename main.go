@@ -57,6 +57,9 @@ func createNc() (nc *nats.Conn, deferFunc func()) {
 	var err error
 	nc, err = nats.Connect(strings.Join(servers, ","),
 		nats.UserInfo(User, Pass),
+		// nats.Timeout(3*time.Second),
+		nats.PingInterval(5*time.Second),
+		nats.MaxPingsOutstanding(3),
 		// nats.MaxReconnects(60),
 		// nats.NoReconnect(),
 		// nats.DontRandomize(),
