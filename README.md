@@ -54,13 +54,13 @@ step2:
 
     left local to remote:
 
-        .\nats-server.exe -c .\leaf_remote.conf
+        nats-server.exe -c .\leaf_remote.conf
 
         nats reply -s nats://localhost:4411 q 42
         nats reply -s nats://app:app@localhost:4411 q 42
 
 
-        .\nats-server.exe -c .\leaf_local.conf
+        nats-server.exe -c .\leaf_local.conf
 
         nats req -s nats://127.0.0.1:4422 q "req remote leftnode"
         nats req -s nats://app:app@127.0.0.1:4422 q "req remote leftnode"
@@ -68,13 +68,13 @@ step2:
 
         https://docs.nats.io/running-a-nats-service/configuration/leafnodes/jetstream_leafnodes
     
-    nats -s "nats://app:app@localhost:4222" sub "events.0.*"
-    nats -s "nats://app:app@localhost:4222" sub "events.1.*"
-    nats -s "nats://app:app@localhost:4222" sub "events.2.*"
+    nats -s "nats://app:app@localhost:4222" sub "pevents.0.*"
+    nats -s "nats://app:app@localhost:4222" sub "pevents.1.*"
+    nats -s "nats://app:app@localhost:4222" sub "pevents.2.*"
 
-    nats -s "nats://app:app@localhost:4322" pub events.a "Request {{Count}}" --count 10
-    nats -s "nats://app:app@localhost:4322" pub events.e "Request {{Count}}" --count 10
-    nats -s "nats://app:app@localhost:4322" pub events.g "Request {{Count}}" --count 10
+    nats -s "nats://app:app@localhost:4322" pub pevents.a "Request {{Count}}" --count 10
+    nats -s "nats://app:app@localhost:4322" pub pevents.e "Request {{Count}}" --count 10
+    nats -s "nats://app:app@localhost:4322" pub pevents.g "Request {{Count}}" --count 10
 
 natsboard:
 

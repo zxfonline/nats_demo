@@ -21,35 +21,39 @@ var (
 	// ws://...
 	// tls://...
 	servers = []string{
-		"nats://127.0.0.1:4222,nats://127.0.0.1:4322",
+		"nats://127.0.0.1:4222,nats://127.0.0.1:4223,nats://127.0.0.1:4224",
+		// "nats://127.0.0.1:4322,nats://127.0.0.1:4323,nats://127.0.0.1:4324",
 	}
 	User = "app"
 	//cmd:nats server passwd
 	Pass = "app"
 )
 
-//https://natsbyexample.com/examples/jetstream/
+const (
+	StreamName_EVENTS     = "EVENTS"
+	StreamSubjects_EVENTS = "events.>"
+)
+
+// https://natsbyexample.com/examples/jetstream/
 func main() {
-	//cmd :`nats stream rm EVENTS`
-	limits_stream()
+	func() {
+		nc, js, cancel := createJs()
+		defer cancel()
+		// limits_stream(nc, js)
+		// interest_stream(nc, js)
+		workqueue_stream(nc, js)
+		// pull_consumer(nc, js)
+		// pull_consumer_limits(nc, js)
+		// push_consumer(nc, js)
+		// queue_push_consumer(nc, js)
+		// multi_stream_consumption(nc, js)
+	}()
 
-	//cmd :`nats stream rm EVENTS`
-	interest_stream()
+	// QueuePubSub()
+	// PubSub()
+	// DrainDemo()
 
-	//cmd :`nats stream rm EVENTS`
-	workqueue_stream()
-	pull_consumer()
-	pull_consumer_limits()
-	push_consumer()
-	queue_push_consumer()
-	multi_stream_consumption()
-
-	QueuePubSub()
-
-	PubSub()
-	DrainDemo()
-
-	EncodeDemo()
+	// EncodeDemo()
 }
 
 // Connect to NATS
@@ -57,42 +61,45 @@ func createNc() (nc *nats.Conn, deferFunc func()) {
 	var err error
 	nc, err = nats.Connect(strings.Join(servers, ","),
 		nats.UserInfo(User, Pass),
-		// nats.Timeout(3*time.Second),
-		nats.PingInterval(5*time.Second),
+		nats.Timeout(10*time.Second),
+		nats.PingInterval(10*time.Second),
 		nats.MaxPingsOutstanding(3),
 		// nats.MaxReconnects(60),
 		// nats.NoReconnect(),
 		// nats.DontRandomize(),
 		// nats.ReconnectWait(10*time.Second),
 		// nats.ReconnectBufSize(8*1024*1024),
-		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
-			log.Printf("client disconnected: %v\n", err)
+		nats.DisconnectErrHandler(func(conn *nats.Conn, err error) {
+			log.Printf("client disconnected err:%v,status:%v servers:%v\n", err, conn.Status().String(), conn.Servers())
 		}),
-		nats.ReconnectHandler(func(c *nats.Conn) {
-			log.Println("Reconnected to", c.ConnectedUrl())
+		nats.DisconnectHandler(func(conn *nats.Conn) {
+			log.Printf("client disconnected from %v addr:%v cluster:%v id:%v status:%v servers:%v\n", conn.ConnectedServerName(), conn.ConnectedAddr(), conn.ConnectedClusterName(), conn.ConnectedServerId(), conn.Status().String(), conn.Servers())
 		}),
-		nats.ClosedHandler(func(_ *nats.Conn) {
-			log.Println("NATS connection is closed.")
+		nats.ConnectHandler(func(conn *nats.Conn) {
+			// log.Printf("client connected to %+v\n", conn)
+			log.Printf("client connected to %v addr:%v cluster:%v id:%v status:%v servers:%v\n", conn.ConnectedServerName(), conn.ConnectedAddr(), conn.ConnectedClusterName(), conn.ConnectedServerId(), conn.Status().String(), conn.Servers())
 		}),
-		nats.DisconnectHandler(func(_ *nats.Conn) {
-			log.Println("Disconnected from NATS")
+		nats.ReconnectHandler(func(conn *nats.Conn) {
+			log.Printf("client reconnected to %v addr:%v cluster:%v id:%v status:%v servers:%v\n", conn.ConnectedServerName(), conn.ConnectedAddr(), conn.ConnectedClusterName(), conn.ConnectedServerId(), conn.Status().String(), conn.Servers())
 		}),
-		nats.DiscoveredServersHandler(func(nc *nats.Conn) {
-			log.Printf("Known servers: %v\n", nc.Servers())
-			log.Printf("Discovered servers: %v\n", nc.DiscoveredServers())
+		nats.ClosedHandler(func(conn *nats.Conn) {
+			log.Printf("client connection closed,status:%v servers:%v\n", conn.Status().String(), conn.Servers())
 		}),
-		nats.ErrorHandler(func(nc *nats.Conn, s *nats.Subscription, err error) {
+		nats.DiscoveredServersHandler(func(conn *nats.Conn) {
+			log.Printf("client discover servers %v addr:%v cluster:%v id:%v status:%v servers:%v discovered:%v\n", conn.ConnectedServerName(), conn.ConnectedAddr(), conn.ConnectedClusterName(), conn.ConnectedServerId(), conn.Status().String(), conn.Servers(), conn.DiscoveredServers())
+		}),
+		nats.ErrorHandler(func(conn *nats.Conn, s *nats.Subscription, err error) {
 			if s != nil {
-				log.Printf("Async error in %q/%q: %v", s.Subject, s.Queue, err)
+				log.Printf("client connection async err status:%v servers:%v in %q/%q,err:%v\n", conn.Status().String(), conn.Servers(), s.Subject, s.Queue, err)
 			} else {
-				log.Printf("Async error outside subscription: %v", err)
+				log.Printf("client connection async err status:%v servers:%v err:%v\n", conn.Status().String(), conn.Servers(), err)
 			}
 		}))
 	if err != nil {
 		log.Fatalln(err)
 		return
 	}
-	log.Printf("The connection is %v\n", nc.Status().String())
+	// log.Printf("The connection is %v\n", nc.Status().String())
 	deferFunc = func() {
 		nc.Drain()
 		log.Printf("The connection is %v\n", nc.Status().String())
@@ -119,7 +126,7 @@ func printStreamState(js nats.JetStreamContext, name string) {
 		return
 	}
 	b, _ := json.MarshalIndent(info.State, "", " ")
-	log.Println("inspection stream info")
+	log.Println("	inspection stream info")
 	log.Println(string(b))
 }
 
@@ -172,6 +179,7 @@ func EncodeDemo() {
 }
 
 func DrainDemo() {
+
 	log.Println("DrainDemo")
 	nc, cancel := createNc()
 	defer cancel()
@@ -332,26 +340,25 @@ func PubSub() {
 	g.Wait()
 }
 
-//Retention: nats.InterestPolicy https://natsbyexample.com/examples/jetstream/interest-stream/go
-func interest_stream() {
+// Retention: nats.InterestPolicy https://natsbyexample.com/examples/jetstream/interest-stream/go
+func interest_stream(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("interest_stream")
-	_, js, cancel := createJs()
-	defer cancel()
 	cfg := &nats.StreamConfig{
-		Name:      "EVENTS",
+		Name:      StreamName_EVENTS,
 		Retention: nats.InterestPolicy,
-		Subjects:  []string{"events.>"},
+		Subjects:  []string{StreamSubjects_EVENTS},
 	}
-
+	js.PurgeStream(StreamName_EVENTS)
 	js.AddStream(cfg)
-	defer js.DeleteStream(cfg.Name)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 
 	js.Publish("events.page_loaded", nil)
 	js.Publish("events.mouse_clicked", nil)
-	ack, _ := js.Publish("events.input_focused", nil)
+	ack, err := js.Publish("events.input_focused", nil)
 	log.Println("published 3 messages")
 
+	log.Printf("last message err: %v\n", err)
 	log.Printf("last message seq: %d\n", ack.Sequence)
 
 	log.Println("# Stream info without any consumers")
@@ -422,19 +429,18 @@ func interest_stream() {
 	printStreamState(js, cfg.Name)
 }
 
-//Retention: nats.WorkQueuePolicy https://natsbyexample.com/examples/jetstream/workqueue-stream/go
-func workqueue_stream() {
+// Retention: nats.WorkQueuePolicy https://natsbyexample.com/examples/jetstream/workqueue-stream/go
+func workqueue_stream(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("workqueue_stream")
-	_, js, cancel := createJs()
-	defer cancel()
 	cfg := &nats.StreamConfig{
-		Name:      "EVENTS",
+		Name:      StreamName_EVENTS,
 		Retention: nats.WorkQueuePolicy,
-		Subjects:  []string{"events.>"},
+		Subjects:  []string{StreamSubjects_EVENTS},
 	}
 
+	js.PurgeStream(StreamName_EVENTS)
 	js.AddStream(cfg)
-	defer js.DeleteStream(cfg.Name)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 
 	// js.Publish("events.us.page_loaded", nil)
@@ -496,22 +502,20 @@ func workqueue_stream() {
 	printStreamState(js, cfg.Name)
 }
 
-//Retention: nats.LimitsPolicy https://natsbyexample.com/examples/jetstream/limits-stream/go
-func limits_stream() {
+// Retention: nats.LimitsPolicy https://natsbyexample.com/examples/jetstream/limits-stream/go
+func limits_stream(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("limits_stream")
-	_, js, cancel := createJs()
-	defer cancel()
 
-	cfg := nats.StreamConfig{
-		Name:      "EVENTS",
+	cfg := &nats.StreamConfig{
+		Name:      StreamName_EVENTS,
 		Retention: nats.LimitsPolicy,
-		Subjects:  []string{"events.>"},
+		Subjects:  []string{StreamSubjects_EVENTS},
 	}
-
 	cfg.Storage = nats.FileStorage
 
-	js.AddStream(&cfg)
-	defer js.DeleteStream(cfg.Name)
+	js.PurgeStream(StreamName_EVENTS)
+	js.AddStream(cfg)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 
 	js.Publish("events.page_loaded", nil)
@@ -539,19 +543,19 @@ func limits_stream() {
 	printStreamState(js, cfg.Name)
 
 	cfg.MaxMsgs = 10
-	js.UpdateStream(&cfg)
+	js.UpdateStream(cfg)
 	log.Println("set max messages to 10")
 
 	printStreamState(js, cfg.Name)
 
 	cfg.MaxBytes = 300
-	js.UpdateStream(&cfg)
+	js.UpdateStream(cfg)
 	log.Println("set max bytes to 300")
 
 	printStreamState(js, cfg.Name)
 
 	cfg.MaxAge = time.Second
-	js.UpdateStream(&cfg)
+	js.UpdateStream(cfg)
 	log.Println("set max age to one second")
 
 	printStreamState(js, cfg.Name)
@@ -562,17 +566,17 @@ func limits_stream() {
 	printStreamState(js, cfg.Name)
 }
 
-//https://natsbyexample.com/examples/jetstream/pull-consumer/go
-func pull_consumer() {
+// https://natsbyexample.com/examples/jetstream/pull-consumer/go
+func pull_consumer(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("pull_consumer")
-	_, js, cancel := createJs()
-	defer cancel()
 	cfg := &nats.StreamConfig{
-		Name:     "EVENTS",
-		Subjects: []string{"events.>"},
+		Name: StreamName_EVENTS,
+		// Retention: nats.LimitsPolicy,
+		Subjects: []string{StreamSubjects_EVENTS},
 	}
+	js.PurgeStream(StreamName_EVENTS)
 	js.AddStream(cfg)
-	defer js.DeleteStream(cfg.Name)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 
 	js.Publish("events.1", nil)
@@ -633,22 +637,21 @@ func pull_consumer() {
 	sub2.Unsubscribe()
 }
 
-//https://natsbyexample.com/examples/jetstream/multi-stream-consumption/go
-func multi_stream_consumption() {
+// https://natsbyexample.com/examples/jetstream/multi-stream-consumption/go
+func multi_stream_consumption(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("multi_stream_consumption")
-	nc, js, cancel := createJs()
-	defer cancel()
 	cfg1 := &nats.StreamConfig{
-		Name:     "EVENTS-EU",
+		Name: "EVENTS-EU",
+		// Retention: nats.LimitsPolicy,
 		Subjects: []string{"events.eu.>"},
 	}
 	js.AddStream(cfg1)
 	defer js.DeleteStream(cfg1.Name)
 	cfg2 := &nats.StreamConfig{
-		Name:     "EVENTS-US",
+		Name: "EVENTS-US",
+		// Retention: nats.LimitsPolicy,
 		Subjects: []string{"events.us.>"},
 	}
-
 	js.AddStream(cfg2)
 	defer js.DeleteStream(cfg2.Name)
 
@@ -687,25 +690,25 @@ func multi_stream_consumption() {
 	log.Printf("us: last delivered: %d, num pending: %d\n", info2.Delivered.Stream, info2.NumPending)
 }
 
-//https://natsbyexample.com/examples/jetstream/queue-push-consumer/go
-func queue_push_consumer() {
+// https://natsbyexample.com/examples/jetstream/queue-push-consumer/go
+func queue_push_consumer(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("queue_push_consumer")
-	nc, js, cancel := createJs()
-	defer cancel()
 	cfg := &nats.StreamConfig{
-		Name:     "EVENTS",
-		Subjects: []string{"events.>"},
+		Name: StreamName_EVENTS,
+		// Retention: nats.LimitsPolicy,
+		Subjects: []string{StreamSubjects_EVENTS},
 	}
+	js.PurgeStream(StreamName_EVENTS)
 	js.AddStream(cfg)
-	defer js.DeleteStream(cfg.Name)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 	log.Println("# Durable (implicit)")
-	sub1, _ := js.QueueSubscribeSync("events.>", "event-processor", nats.AckExplicit())
+	sub1, _ := js.QueueSubscribeSync(StreamSubjects_EVENTS, "event-processor", nats.AckExplicit())
 
 	info, _ := js.ConsumerInfo(cfg.Name, "event-processor")
 	log.Printf("deliver group: %q\n", info.Config.DeliverGroup)
 
-	sub2, _ := js.QueueSubscribeSync("events.>", "event-processor", nats.AckExplicit())
+	sub2, _ := js.QueueSubscribeSync(StreamSubjects_EVENTS, "event-processor", nats.AckExplicit())
 
 	sub3, _ := nc.QueueSubscribeSync(info.Config.DeliverSubject, info.Config.DeliverGroup)
 	log.Printf("deliver subject: %q\n", info.Config.DeliverSubject)
@@ -777,17 +780,17 @@ func queue_push_consumer() {
 	wg.Wait()
 }
 
-//https://natsbyexample.com/examples/jetstream/push-consumer/go
-func push_consumer() {
+// https://natsbyexample.com/examples/jetstream/push-consumer/go
+func push_consumer(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("push_consumer")
-	_, js, cancel := createJs()
-	defer cancel()
 	cfg := &nats.StreamConfig{
-		Name:     "EVENTS",
-		Subjects: []string{"events.>"},
+		Name: StreamName_EVENTS,
+		// Retention: nats.LimitsPolicy,
+		Subjects: []string{StreamSubjects_EVENTS},
 	}
+	js.PurgeStream(StreamName_EVENTS)
 	js.AddStream(cfg)
-	defer js.DeleteStream(cfg.Name)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 
 	js.Publish("events.1", nil)
@@ -795,7 +798,7 @@ func push_consumer() {
 	js.Publish("events.3", nil)
 
 	log.Println("# Ephemeral")
-	sub, _ := js.SubscribeSync("events.>", nats.AckExplicit())
+	sub, _ := js.SubscribeSync(StreamSubjects_EVENTS, nats.AckExplicit())
 
 	ephemeralName := <-js.ConsumerNames(cfg.Name)
 	log.Printf("ephemeral name is %q\n", ephemeralName)
@@ -826,7 +829,7 @@ func push_consumer() {
 
 	log.Println("# Durable (Helper)")
 
-	sub, _ = js.SubscribeSync("events.>", nats.Durable("handler-1"), nats.AckExplicit())
+	sub, _ = js.SubscribeSync(StreamSubjects_EVENTS, nats.Durable("handler-1"), nats.AckExplicit())
 
 	queuedMsgs, _, _ = sub.Pending()
 	log.Printf("%d messages queued\n", queuedMsgs)
@@ -881,17 +884,17 @@ func push_consumer() {
 	log.Printf("num redelivered: %d\n", info.NumRedelivered)
 }
 
-//https://natsbyexample.com/examples/jetstream/pull-consumer-limits/go
-func pull_consumer_limits() {
+// https://natsbyexample.com/examples/jetstream/pull-consumer-limits/go
+func pull_consumer_limits(nc *nats.Conn, js nats.JetStreamContext) {
 	log.Println("pull_consumer_limits")
-	_, js, cancel := createJs()
-	defer cancel()
 	cfg := &nats.StreamConfig{
-		Name:     "EVENTS",
-		Subjects: []string{"events.>"},
+		Name: StreamName_EVENTS,
+		// Retention: nats.LimitsPolicy,
+		Subjects: []string{StreamSubjects_EVENTS},
 	}
+	js.PurgeStream(StreamName_EVENTS)
 	js.AddStream(cfg)
-	defer js.DeleteStream(cfg.Name)
+	defer js.DeleteStream(StreamName_EVENTS)
 	log.Println("created the stream")
 
 	consumerName := "processor"
@@ -951,7 +954,7 @@ func pull_consumer_limits() {
 	js.Publish("events.2", nil)
 
 	_, err = sub.Fetch(10)
-	log.Printf("%s\n", err)
+	log.Printf("%v\n", err)
 
 	msgs, _ = sub.Fetch(2)
 	log.Printf("requested 2, got %d\n", len(msgs))
